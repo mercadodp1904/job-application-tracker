@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Application = require('../models/Application');
+const { validateApplicationDates } = require('../utils/dateValidation');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -31,10 +32,15 @@ const getApplicationById = async (req, res, next) => {
 
 const createApplication = async (req, res, next) => {
   try {
+    const dateError = validateApplicationDates(req.body);
+    if (dateError) {
+      return res.status(400).json({ message: dateError });
+    }
+
     const application = await Application.create(req.body);
-    res.status(201).json(application);
+    return res.status(201).json(application);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
@@ -44,15 +50,29 @@ const updateApplication = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid application ID' });
     }
 
-    const application = await Application.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
-    if (!application) {
+    const existingApplication = await Application.findById(req.params.id);
+    if (!existingApplication) {
       return res.status(404).json({ message: 'Application not found' });
     }
+
+    const dateError = validateApplicationDates({
+      dateApplied:
+        req.body.dateApplied !== undefined
+          ? req.body.dateApplied
+          : existingApplication.dateApplied,
+      nextActionDate:
+        req.body.nextActionDate !== undefined
+          ? req.body.nextActionDate
+          : existingApplication.nextActionDate,
+    });
+    if (dateError) {
+      return res.status(400).json({ message: dateError });
+    }
+
+    const application = await Application.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
 
     return res.status(200).json(application);
   } catch (error) {

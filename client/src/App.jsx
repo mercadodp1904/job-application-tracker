@@ -6,6 +6,7 @@ import {
   getApplications,
   updateApplication,
 } from './api';
+import NeedsAttention, { isOverdue } from './components/NeedsAttention';
 
 const statuses = ['Saved', 'Applied', 'Interview', 'Offer', 'Rejected'];
 
@@ -39,6 +40,44 @@ function formatDate(date) {
         day: 'numeric',
         year: 'numeric',
       });
+}
+
+function getTodayDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addCalendarDays(date, days) {
+  const [year, month, day] = date.split('-').map(Number);
+  const result = new Date(year, month - 1, day);
+  result.setDate(result.getDate() + days);
+  return [
+    result.getFullYear(),
+    String(result.getMonth() + 1).padStart(2, '0'),
+    String(result.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function validateDateFields(form) {
+  const errors = {};
+  const today = getTodayDate();
+
+  if (form.dateApplied && form.dateApplied > today) {
+    errors.dateApplied = 'Date applied cannot be in the future.';
+  }
+
+  if (
+    form.dateApplied &&
+    form.nextActionDate &&
+    form.nextActionDate < form.dateApplied
+  ) {
+    errors.nextActionDate = 'Next action date cannot be earlier than date applied.';
+  }
+
+  return errors;
 }
 
 function toFormValues(application) {
@@ -209,6 +248,8 @@ function App() {
           </div>
         )}
 
+        <NeedsAttention applications={applications} onEdit={openEditModal} />
+
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-panel">
           <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div>
@@ -293,7 +334,16 @@ function App() {
                       </td>
                       <td className="px-5 py-4 text-slate-500">{application.source || '—'}</td>
                       <td className="px-5 py-4 text-slate-500">{formatDate(application.dateApplied)}</td>
-                      <td className="px-5 py-4 text-slate-500">{formatDate(application.nextActionDate)}</td>
+                      <td className="px-5 py-4 text-slate-500">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{formatDate(application.nextActionDate)}</span>
+                          {isOverdue(application) && (
+                            <span className="rounded-full bg-rose-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
                           <button
@@ -355,22 +405,64 @@ function EmptyState({ onAdd }) {
 
 function ApplicationModal({ application, onClose, onSave }) {
   const [form, setForm] = useState(application ? toFormValues(application) : emptyForm);
-  const [validationError, setValidationError] = useState('');
+  const [validationErrors, setValidationErrors] = useState({});
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [hasManuallyEditedNextActionDate, setHasManuallyEditedNextActionDate] =
+    useState(Boolean(application));
+
+  const today = getTodayDate();
+  const isNewApplication = !application;
+  const showSuggestion =
+    isNewApplication &&
+    form.status === 'Applied' &&
+    Boolean(form.dateApplied) &&
+    !hasManuallyEditedNextActionDate;
 
   const handleChange = (event) => {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    const { name, value } = event.target;
+    setValidationErrors((current) => ({ ...current, [name]: '' }));
+
+    if (name === 'nextActionDate') {
+      setHasManuallyEditedNextActionDate(true);
+      setForm((current) => ({ ...current, nextActionDate: value }));
+      return;
+    }
+
+    setForm((current) => {
+      const nextForm = { ...current, [name]: value };
+      if (
+        isNewApplication &&
+        !hasManuallyEditedNextActionDate &&
+        (name === 'dateApplied' || name === 'status') &&
+        nextForm.status === 'Applied' &&
+        nextForm.dateApplied
+      ) {
+        nextForm.nextActionDate = addCalendarDays(nextForm.dateApplied, 7);
+      }
+      return nextForm;
+    });
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.company.trim() || !form.role.trim()) {
-      setValidationError('Company and role are required.');
+      setSaveError('');
+      setValidationErrors({
+        company: !form.company.trim() ? 'Company is required.' : '',
+        role: !form.role.trim() ? 'Role is required.' : '',
+      });
       return;
     }
 
-    setValidationError('');
+    const dateErrors = validateDateFields(form);
+    if (Object.keys(dateErrors).length > 0) {
+      setValidationErrors(dateErrors);
+      setSaveError('');
+      return;
+    }
+
+    setValidationErrors({});
     setSaveError('');
     setIsSaving(true);
     try {
@@ -412,17 +504,23 @@ function ApplicationModal({ application, onClose, onSave }) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
-          {validationError && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{validationError}</p>}
           {saveError && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Company *" name="company" value={form.company} onChange={handleChange} required />
-            <FormField label="Role *" name="role" value={form.role} onChange={handleChange} required />
+            <FormField label="Company *" name="company" value={form.company} onChange={handleChange} required error={validationErrors.company} />
+            <FormField label="Role *" name="role" value={form.role} onChange={handleChange} required error={validationErrors.role} />
             <FormField label="Status" name="status" value={form.status} onChange={handleChange} as="select">
               {statuses.map((status) => <option key={status}>{status}</option>)}
             </FormField>
             <FormField label="Source" name="source" value={form.source} onChange={handleChange} placeholder="e.g. LinkedIn" />
-            <FormField label="Date applied" name="dateApplied" type="date" value={form.dateApplied} onChange={handleChange} />
-            <FormField label="Next action date" name="nextActionDate" type="date" value={form.nextActionDate} onChange={handleChange} />
+            <FormField label="Date applied" name="dateApplied" type="date" value={form.dateApplied} onChange={handleChange} max={today} error={validationErrors.dateApplied} />
+            <div>
+              <FormField label="Next action date" name="nextActionDate" type="date" value={form.nextActionDate} onChange={handleChange} error={validationErrors.nextActionDate} />
+              {showSuggestion && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Suggested: 7 days after applying. You can change it.
+                </p>
+              )}
+            </div>
             <FormField label="Job URL" name="jobUrl" type="url" value={form.jobUrl} onChange={handleChange} placeholder="https://" />
             <FormField label="Salary range" name="salaryRange" value={form.salaryRange} onChange={handleChange} placeholder="e.g. $100k–$120k" />
           </div>
@@ -441,7 +539,16 @@ function ApplicationModal({ application, onClose, onSave }) {
   );
 }
 
-function FormField({ label, name, value, onChange, as = 'input', children, ...props }) {
+function FormField({
+  label,
+  name,
+  value,
+  onChange,
+  as = 'input',
+  children,
+  error,
+  ...props
+}) {
   const Component = as;
   return (
     <label className="block">
@@ -449,6 +556,7 @@ function FormField({ label, name, value, onChange, as = 'input', children, ...pr
       <Component className="field" name={name} value={value} onChange={onChange} {...props}>
         {children}
       </Component>
+      {error && <span className="mt-1.5 block text-xs font-medium text-rose-600">{error}</span>}
     </label>
   );
 }

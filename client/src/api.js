@@ -8,6 +8,7 @@ const api = axios.create({
 });
 
 export const getApplications = () => api.get('/applications');
+export const getStats = () => api.get('/stats');
 export const createApplication = (application) => api.post('/applications', application);
 export const updateApplication = (id, application) => api.put(`/applications/${id}`, application);
 export const deleteApplication = (id) => api.delete(`/applications/${id}`);

@@ -4,6 +4,7 @@ const cors = require('cors');
 const express = require('express');
 const connectDB = require('./config/db');
 const applicationRoutes = require('./routes/applicationRoutes');
+const { getStats } = require('./controllers/applicationController');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -20,6 +21,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+app.get('/api/stats', getStats);
 app.use('/api/applications', applicationRoutes);
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });

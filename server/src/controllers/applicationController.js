@@ -13,6 +13,30 @@ const getApplications = async (req, res, next) => {
   }
 };
 
+const getStats = async (req, res, next) => {
+  try {
+    const [stats] = await Application.aggregate([
+      {
+        $facet: {
+          total: [{ $count: 'count' }],
+          byStatus: [
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+            { $project: { _id: 0, status: '$_id', count: 1 } },
+          ],
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      total: stats.total[0]?.count || 0,
+      byStatus: stats.byStatus,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getApplicationById = async (req, res, next) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -99,6 +123,7 @@ const deleteApplication = async (req, res, next) => {
 
 module.exports = {
   getApplications,
+  getStats,
   getApplicationById,
   createApplication,
   updateApplication,

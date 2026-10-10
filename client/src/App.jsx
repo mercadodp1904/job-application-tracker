@@ -4,6 +4,7 @@ import {
   deleteApplication,
   getApiErrorMessage,
   getApplications,
+  getStats,
   updateApplication,
 } from './api';
 import NeedsAttention, { isOverdue } from './components/NeedsAttention';
@@ -28,6 +29,14 @@ const statusStyles = {
   Interview: 'bg-amber-100 text-amber-700',
   Offer: 'bg-emerald-100 text-emerald-700',
   Rejected: 'bg-rose-100 text-rose-700',
+};
+
+const statsStatusStyles = {
+  Saved: 'border-slate-200 bg-slate-50 text-slate-700',
+  Applied: 'border-blue-200 bg-blue-50 text-blue-700',
+  Interview: 'border-amber-200 bg-amber-50 text-amber-700',
+  Offer: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Rejected: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
 function formatDate(date) {
@@ -98,6 +107,7 @@ function toFormValues(application) {
 
 function App() {
   const [applications, setApplications] = useState([]);
+  const [stats, setStats] = useState({ total: 0, byStatus: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -105,12 +115,22 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApplication, setEditingApplication] = useState(null);
 
+  const loadStats = async () => {
+    try {
+      const response = await getStats();
+      setStats(response.data);
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Could not load application stats.'));
+    }
+  };
+
   const loadApplications = async () => {
     setIsLoading(true);
     setError('');
     try {
       const response = await getApplications();
       setApplications(response.data);
+      await loadStats();
     } catch (requestError) {
       setError(
         getApiErrorMessage(
@@ -164,6 +184,7 @@ function App() {
         const response = await createApplication(formValues);
         setApplications((current) => [response.data, ...current]);
       }
+      await loadStats();
       setIsModalOpen(false);
     } catch (requestError) {
       throw new Error(getApiErrorMessage(requestError, 'Could not save application.'));
@@ -182,6 +203,7 @@ function App() {
       setApplications((current) =>
         current.map((item) => (item._id === application._id ? response.data : item))
       );
+      await loadStats();
     } catch (requestError) {
       setApplications(previousApplications);
       setError(getApiErrorMessage(requestError, 'Could not update application status.'));
@@ -198,6 +220,7 @@ function App() {
       setApplications((current) =>
         current.filter((item) => item._id !== application._id)
       );
+      await loadStats();
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Could not delete application.'));
     }
@@ -248,6 +271,7 @@ function App() {
           </div>
         )}
 
+        <StatsSummary stats={stats} statuses={statuses} />
         <NeedsAttention applications={applications} onEdit={openEditModal} />
 
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-panel">
@@ -379,6 +403,40 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function StatsSummary({ stats, statuses: availableStatuses }) {
+  const countsByStatus = Object.fromEntries(
+    (stats.byStatus || []).map(({ status, count }) => [status, count])
+  );
+
+  return (
+    <section className="mb-6">
+      <div className="mb-3 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            Pipeline summary
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-slate-800">Your applications</h2>
+        </div>
+        <p className="text-sm text-slate-500">
+          <span className="font-bold text-slate-800">{stats.total}</span>{' '}
+          {stats.total === 1 ? 'application' : 'applications'} total
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {availableStatuses.map((status) => (
+          <div
+            key={status}
+            className={`rounded-xl border px-3.5 py-3 ${statsStatusStyles[status]}`}
+          >
+            <p className="text-xs font-bold uppercase tracking-wide">{status}</p>
+            <p className="mt-1 text-2xl font-bold">{countsByStatus[status] || 0}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
